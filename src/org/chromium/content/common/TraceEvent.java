@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,35 +6,170 @@ package org.chromium.content.common;
 
 import android.os.Build;
 import android.os.Looper;
+import android.os.MessageQueue;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.Printer;
 
-import java.lang.reflect.Field;
+import org.chromium.base.CommandLine;
+import org.chromium.base.ThreadUtils;
+
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-// Java mirror of Chrome trace event API.  See
-// base/debug/trace_event.h.  Unlike the native version, Java does not
-// have stack objects, so a TRACE_EVENT() which does both
-// TRACE_EVENT_BEGIN() and TRACE_EVENT_END() in ctor/dtor is not
-// possible.
-// It is OK to use tracing before the native library has loaded, but such traces will
-// be ignored. (Perhaps we could devise to buffer them up in future?).
+/**
+ * Java mirror of Chrome trace event API. See base/debug/trace_event.h.  Unlike the native version,
+ * Java does not have stack objects, so a TRACE_EVENT() which does both TRACE_EVENT_BEGIN() and
+ * TRACE_EVENT_END() in ctor/dtor is not possible.
+ * It is OK to use tracing before the native library has loaded, but such traces will
+ * be ignored. (Perhaps we could devise to buffer them up in future?).
+ */
 public class TraceEvent {
 
-    private static boolean sEnabled = false;
+    private static volatile boolean sEnabled = false;
 
-    private static class LooperTracePrinter implements Printer {
-        private static final String NAME = "Looper.dispatchMessage";
+    private static class BasicLooperMonitor implements Printer {
+        private static final String DISPATCH_EVENT_NAME =
+                "Looper.dispatchMessage";
+
         @Override
-        public void println(String line) {
-            if (line.startsWith(">>>>>")) {
-                TraceEvent.begin(NAME, line);
+        public void println(final String line) {
+            if (line.startsWith(">")) {
+                beginHandling(line);
             } else {
-                assert line.startsWith("<<<<<");
-                TraceEvent.end(NAME);
+                assert line.startsWith("<");
+                endHandling(line);
             }
         }
+
+        void beginHandling(final String line) {
+            TraceEvent.begin(DISPATCH_EVENT_NAME, line);
+        }
+
+        void endHandling(final String line) {
+            TraceEvent.end(DISPATCH_EVENT_NAME);
+        }
+    }
+
+    /**
+     * A class that records, traces and logs statistics about the UI thead's Looper.
+     * The output of this class can be used in a number of interesting ways:
+     * <p>
+     * <ol><li>
+     * When using chrometrace, there will be a near-continuous line of
+     * measurements showing both event dispatches as well as idles;
+     * </li><li>
+     * Logging messages are output for events that run too long on the
+     * event dispatcher, making it easy to identify problematic areas;
+     * </li><li>
+     * Statistics are output whenever there is an idle after a non-trivial
+     * amount of activity, allowing information to be gathered about task
+     * density and execution cadence on the Looper;
+     * </li></ol>
+     * <p>
+     * The class attaches itself as an idle handler to the main Looper, and
+     * monitors the execution of events and idle notifications. Task counters
+     * accumulate between idle notifications and get reset when a new idle
+     * notification is received.
+     */
+    private static final class IdleTracingLooperMonitor extends BasicLooperMonitor
+            implements MessageQueue.IdleHandler {
+        // Tags for dumping to logcat or TraceEvent
+        private static final String TAG = "TraceEvent.LooperMonitor";
+        private static final String IDLE_EVENT_NAME = "Looper.queueIdle";
+
+        // Calculation constants
+        private static final long FRAME_DURATION_MILLIS = 1000L / 60L; // 60 FPS
+        // A reasonable threshold for defining a Looper event as "long running"
+        private static final long MIN_INTERESTING_DURATION_MILLIS =
+                FRAME_DURATION_MILLIS;
+        // A reasonable threshold for a "burst" of tasks on the Looper
+        private static final long MIN_INTERESTING_BURST_DURATION_MILLIS =
+                MIN_INTERESTING_DURATION_MILLIS * 3;
+
+        // Stats tracking
+        private long mLastIdleStartedAt = 0L;
+        private long mLastWorkStartedAt = 0L;
+        private int mNumTasksSeen = 0;
+        private int mNumIdlesSeen = 0;
+        private int mNumTasksSinceLastIdle = 0;
+
+        // State
+        private boolean mIdleMonitorAttached = false;
+
+        // Called from within the begin/end methods only.
+        // This method can only execute on the looper thread, because that is
+        // the only thread that is permitted to call Looper.myqueue().
+        private final void syncIdleMonitoring() {
+            if (sEnabled && !mIdleMonitorAttached) {
+                // approximate start time for computational purposes
+                mLastIdleStartedAt = SystemClock.elapsedRealtime();
+                Looper.myQueue().addIdleHandler(this);
+                mIdleMonitorAttached = true;
+                Log.v(TAG, "attached idle handler");
+            } else if (mIdleMonitorAttached && !sEnabled) {
+                Looper.myQueue().removeIdleHandler(this);
+                mIdleMonitorAttached = false;
+                Log.v(TAG, "detached idle handler");
+            }
+        }
+
+        @Override
+        final void beginHandling(final String line) {
+            // Close-out any prior 'idle' period before starting new task.
+            if (mNumTasksSinceLastIdle == 0) {
+                TraceEvent.end(IDLE_EVENT_NAME);
+            }
+            mLastWorkStartedAt = SystemClock.elapsedRealtime();
+            syncIdleMonitoring();
+            super.beginHandling(line);
+        }
+
+        @Override
+        final void endHandling(final String line) {
+            final long elapsed = SystemClock.elapsedRealtime()
+                    - mLastWorkStartedAt;
+            if (elapsed > MIN_INTERESTING_DURATION_MILLIS) {
+                traceAndLog(Log.WARN, "observed a task that took "
+                        + elapsed + "ms: " + line);
+            }
+            super.endHandling(line);
+            syncIdleMonitoring();
+            mNumTasksSeen++;
+            mNumTasksSinceLastIdle++;
+        }
+
+        private static void traceAndLog(int level, String message) {
+            TraceEvent.instant("TraceEvent.LooperMonitor:IdleStats", message);
+            Log.println(level, TAG, message);
+        }
+
+        @Override
+        public final boolean queueIdle() {
+            final long now =  SystemClock.elapsedRealtime();
+            if (mLastIdleStartedAt == 0) mLastIdleStartedAt = now;
+            final long elapsed = now - mLastIdleStartedAt;
+            mNumIdlesSeen++;
+            TraceEvent.begin(IDLE_EVENT_NAME, mNumTasksSinceLastIdle + " tasks since last idle.");
+            if (elapsed > MIN_INTERESTING_BURST_DURATION_MILLIS) {
+                // Dump stats
+                String statsString = mNumTasksSeen + " tasks and "
+                        + mNumIdlesSeen + " idles processed so far, "
+                        + mNumTasksSinceLastIdle + " tasks bursted and "
+                        + elapsed + "ms elapsed since last idle";
+                traceAndLog(Log.DEBUG, statsString);
+            }
+            mLastIdleStartedAt = now;
+            mNumTasksSinceLastIdle = 0;
+            return true; // stay installed
+        }
+    }
+
+    // Holder for monitor avoids unnecessary construction on non-debug runs
+    private static final class LooperMonitorHolder {
+        private static final BasicLooperMonitor sInstance =
+                CommandLine.getInstance().hasSwitch(ContentSwitches.ENABLE_IDLE_TRACING) ?
+                        new IdleTracingLooperMonitor() : new BasicLooperMonitor();
     }
 
     private static long sTraceTagView;
@@ -45,7 +180,7 @@ public class TraceEvent {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             try {
                 Class<?> traceClass = Class.forName("android.os.Trace");
-                sTraceTagView = traceClass.getField("TRACE_TAG_VIEW").getLong(null);
+                sTraceTagView = traceClass.getField("TRACE_TAG_WEBVIEW").getLong(null);
 
                 Class<?> systemPropertiesClass = Class.forName("android.os.SystemProperties");
                 sSystemPropertiesGetLongMethod = systemPropertiesClass.getDeclaredMethod(
@@ -112,7 +247,8 @@ public class TraceEvent {
     public static synchronized void setEnabled(boolean enabled) {
         if (sEnabled == enabled) return;
         sEnabled = enabled;
-        Looper.getMainLooper().setMessageLogging(enabled ? new LooperTracePrinter() : null);
+        ThreadUtils.getUiThreadLooper().setMessageLogging(
+                enabled ? LooperMonitorHolder.sInstance : null);
     }
 
     /**

@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@ import android.view.MotionEvent;
  * This objects controls the scroll snapping behavior based on scroll updates.
  */
 class SnapScrollController {
-    private static final String TAG = SnapScrollController.class.toString();
+    private static final String TAG = "SnapScrollController";
     private static final int SNAP_NONE = 0;
     private static final int SNAP_HORIZ = 1;
     private static final int SNAP_VERT = 2;

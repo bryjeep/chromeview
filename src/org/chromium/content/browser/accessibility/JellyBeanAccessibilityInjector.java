@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@ package org.chromium.content.browser.accessibility;
 import android.content.Context;
 import android.os.Bundle;
 import android.os.SystemClock;
-import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 
 import org.chromium.content.browser.ContentViewCore;
@@ -246,7 +245,7 @@ class JellyBeanAccessibilityInjector extends AccessibilityInjector {
         @SuppressWarnings("unused")
         public void onResult(String id, String result) {
             final long resultId;
-             try {
+            try {
                 resultId = Long.parseLong(id);
             } catch (NumberFormatException e) {
                 return;

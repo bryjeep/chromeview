@@ -1,12 +1,10 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.media;
 
-import android.Manifest.permission;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 
@@ -35,10 +33,10 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
     public static final int MEDIA_ERROR_TIMED_OUT = -110;
 
     // Used to determine the class instance to dispatch the native call to.
-    private int mNativeMediaPlayerListener = 0;
+    private long mNativeMediaPlayerListener = 0;
     private final Context mContext;
 
-    private MediaPlayerListener(int nativeMediaPlayerListener, Context context) {
+    private MediaPlayerListener(long nativeMediaPlayerListener, Context context) {
         mNativeMediaPlayerListener = nativeMediaPlayerListener;
         mContext = context;
     }
@@ -124,19 +122,15 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
 
     @CalledByNative
     private static MediaPlayerListener create(int nativeMediaPlayerListener,
-            Context context, MediaPlayer mediaPlayer) {
+            Context context, MediaPlayerBridge mediaPlayerBridge) {
         final MediaPlayerListener listener =
                 new MediaPlayerListener(nativeMediaPlayerListener, context);
-        mediaPlayer.setOnBufferingUpdateListener(listener);
-        mediaPlayer.setOnCompletionListener(listener);
-        mediaPlayer.setOnErrorListener(listener);
-        mediaPlayer.setOnPreparedListener(listener);
-        mediaPlayer.setOnSeekCompleteListener(listener);
-        mediaPlayer.setOnVideoSizeChangedListener(listener);
-        if (PackageManager.PERMISSION_GRANTED ==
-                context.checkCallingOrSelfPermission(permission.WAKE_LOCK)) {
-            mediaPlayer.setWakeMode(context, android.os.PowerManager.FULL_WAKE_LOCK);
-        }
+        mediaPlayerBridge.setOnBufferingUpdateListener(listener);
+        mediaPlayerBridge.setOnCompletionListener(listener);
+        mediaPlayerBridge.setOnErrorListener(listener);
+        mediaPlayerBridge.setOnPreparedListener(listener);
+        mediaPlayerBridge.setOnSeekCompleteListener(listener);
+        mediaPlayerBridge.setOnVideoSizeChangedListener(listener);
 
         AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         am.requestAudioFocus(
@@ -144,7 +138,7 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
                 AudioManager.STREAM_MUSIC,
 
                 // Request permanent focus.
-                AudioManager.AUDIOFOCUS_GAIN);
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
         return listener;
     }
 
@@ -152,22 +146,22 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
      * See media/base/android/media_player_listener.cc for all the following functions.
      */
     private native void nativeOnMediaError(
-            int nativeMediaPlayerListener,
+            long nativeMediaPlayerListener,
             int errorType);
 
     private native void nativeOnVideoSizeChanged(
-            int nativeMediaPlayerListener,
+            long nativeMediaPlayerListener,
             int width, int height);
 
     private native void nativeOnBufferingUpdate(
-            int nativeMediaPlayerListener,
+            long nativeMediaPlayerListener,
             int percent);
 
-    private native void nativeOnMediaPrepared(int nativeMediaPlayerListener);
+    private native void nativeOnMediaPrepared(long nativeMediaPlayerListener);
 
-    private native void nativeOnPlaybackComplete(int nativeMediaPlayerListener);
+    private native void nativeOnPlaybackComplete(long nativeMediaPlayerListener);
 
-    private native void nativeOnSeekComplete(int nativeMediaPlayerListener);
+    private native void nativeOnSeekComplete(long nativeMediaPlayerListener);
 
-    private native void nativeOnMediaInterrupted(int nativeMediaPlayerListener);
+    private native void nativeOnMediaInterrupted(long nativeMediaPlayerListener);
 }

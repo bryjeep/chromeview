@@ -1,29 +1,22 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview;
 
 import android.content.pm.ActivityInfo;
-import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Picture;
-import android.graphics.Rect;
-import android.graphics.RectF;
 import android.net.http.SslError;
-import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
-import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.ConsoleMessage;
 import android.webkit.GeolocationPermissions;
-import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 
-import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.WebContentsObserverAndroid;
 import org.chromium.net.NetError;
@@ -39,15 +32,24 @@ import org.chromium.net.NetError;
  */
 public abstract class AwContentsClient {
 
-    private static final String TAG = "AwContentsClient";
-    private final AwContentsClientCallbackHelper mCallbackHelper =
-        new AwContentsClientCallbackHelper(this);
+    private final AwContentsClientCallbackHelper mCallbackHelper;
 
     private AwWebContentsObserver mWebContentsObserver;
 
-    private AwContentViewClient mContentViewClient = new AwContentViewClient();
+    // Last background color reported from the renderer. Holds the sentinal value INVALID_COLOR
+    // if not valid.
+    private int mCachedRendererBackgroundColor = INVALID_COLOR;
 
-    private double mDIPScale;
+    private static final int INVALID_COLOR = 0;
+
+    public AwContentsClient() {
+        this(Looper.myLooper());
+    }
+
+    // Alllow injection of the callback thread, for testing.
+    public AwContentsClient(Looper looper) {
+        mCallbackHelper = new AwContentsClientCallbackHelper(looper, this);
+    }
 
     class AwWebContentsObserver extends WebContentsObserverAndroid {
         public AwWebContentsObserver(ContentViewCore contentViewCore) {
@@ -55,8 +57,9 @@ public abstract class AwContentsClient {
         }
 
         @Override
-        public void didStopLoading(String url) {
-            AwContentsClient.this.onPageFinished(url);
+        public void didFinishLoad(long frameId, String validatedUrl, boolean isMainFrame) {
+            if (isMainFrame)
+                AwContentsClient.this.onPageFinished(validatedUrl);
         }
 
         @Override
@@ -86,38 +89,6 @@ public abstract class AwContentsClient {
 
     }
 
-    private class AwContentViewClient extends ContentViewClient {
-
-        @Override
-        public void onScaleChanged(float oldScale, float newScale) {
-            AwContentsClient.this.onScaleChangedScaled((float)(oldScale * mDIPScale),
-                    (float)(newScale * mDIPScale));
-        }
-
-        @Override
-        public void onStartContentIntent(Context context, String contentUrl) {
-            //  Callback when detecting a click on a content link.
-            AwContentsClient.this.shouldOverrideUrlLoading(contentUrl);
-        }
-
-        @Override
-        public void onTabCrash() {
-            // This is not possible so long as the webview is run single process!
-            throw new RuntimeException("Renderer crash reported.");
-        }
-
-        @Override
-        public void onUpdateTitle(String title) {
-            AwContentsClient.this.onReceivedTitle(title);
-        }
-
-        @Override
-        public boolean shouldOverrideKeyEvent(KeyEvent event) {
-            return AwContentsClient.this.shouldOverrideKeyEvent(event);
-        }
-
-    }
-
     final void installWebContentsObserver(ContentViewCore contentViewCore) {
         if (mWebContentsObserver != null) {
             mWebContentsObserver.detachFromWebContents();
@@ -125,21 +96,36 @@ public abstract class AwContentsClient {
         mWebContentsObserver = new AwWebContentsObserver(contentViewCore);
     }
 
-    final void setDIPScale(double dipScale) {
-        mDIPScale = dipScale;
-    }
-
     final AwContentsClientCallbackHelper getCallbackHelper() {
         return mCallbackHelper;
     }
 
-    final ContentViewClient getContentViewClient() {
-        return mContentViewClient;
+    final int getCachedRendererBackgroundColor() {
+        assert isCachedRendererBackgroundColorValid();
+        return mCachedRendererBackgroundColor;
+    }
+
+    final boolean isCachedRendererBackgroundColorValid() {
+        return mCachedRendererBackgroundColor != INVALID_COLOR;
+    }
+
+    final void onBackgroundColorChanged(int color) {
+        // Avoid storing the sentinal INVALID_COLOR (note that both 0 and 1 are both
+        // fully transparent so this transpose makes no visible difference).
+        mCachedRendererBackgroundColor = color == INVALID_COLOR ? 1 : color;
     }
 
     //--------------------------------------------------------------------------------------------
     //             WebView specific methods that map directly to WebViewClient / WebChromeClient
     //--------------------------------------------------------------------------------------------
+
+    public static class FileChooserParams {
+        public int mode;
+        public String acceptTypes;
+        public String title;
+        public String defaultFilename;
+        public boolean capture;
+    }
 
     public abstract void getVisitedHistory(ValueCallback<String[]> callback);
 
@@ -170,6 +156,10 @@ public abstract class AwContentsClient {
 
     public abstract void onDownloadStart(String url, String userAgent, String contentDisposition,
             String mimeType, long contentLength);
+
+    // TODO(joth): Make abstract once this has rolled in downstream.
+    public /*abstract*/ void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,
+            FileChooserParams fileChooserParams) { }
 
     public abstract void onGeolocationPermissionsShowPrompt(String origin,
             GeolocationPermissions.Callback callback);

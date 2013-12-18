@@ -16,7 +16,62 @@ package org.chromium.ui;
  */
 public final class R {
     public static final class string {
+        public static int copy_to_clipboard_failure_message;
         public static int low_memory_error;
         public static int opening_file_error;
+        public static int color_picker_button_more;
+        public static int color_picker_hue;
+        public static int color_picker_saturation;
+        public static int color_picker_value;
+        public static int color_picker_button_set;
+        public static int color_picker_button_cancel;
+        public static int color_picker_dialog_title;
+        public static int color_picker_button_red;
+        public static int color_picker_button_cyan;
+        public static int color_picker_button_blue;
+        public static int color_picker_button_green;
+        public static int color_picker_button_magenta;
+        public static int color_picker_button_yellow;
+        public static int color_picker_button_black;
+        public static int color_picker_button_white;
+    }
+    public static final class id {
+        public static int autofill_label;
+        public static int autofill_popup_window;
+        public static int autofill_sublabel;
+        public static int selected_color_view;
+        public static int title;
+        public static int more_colors_button;
+        public static int color_picker_advanced;
+        public static int color_picker_simple;
+        public static int color_button_swatch;
+        public static int more_colors_button_border;
+        public static int color_picker_simple_border;
+        public static int gradient;
+        public static int text;
+        public static int seek_bar;
+    }
+    public static final class layout {
+        public static int autofill_text;
+        public static int color_picker_dialog_title;
+        public static int color_picker_dialog_content;
+        public static int color_picker_advanced_component;
+    }
+    public static final class drawable {
+        public static int color_button_background;
+        public static int color_picker_advanced_select_handle;
+    }
+    public static final class style {
+        public static int AutofillPopupWindow;
+    }
+    public static final class color {
+        public static int autofill_dark_divider_color;
+        public static int autofill_divider_color;
+        public static int color_picker_border_color;
+    }
+    public static final class dimen {
+        public static int autofill_text_height;
+        public static int autofill_text_divider_height;
+        public static int color_button_height;
     }
 }

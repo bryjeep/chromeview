@@ -1,9 +1,10 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview;
 
+import android.content.Context;
 import android.content.SharedPreferences;
 
 import org.chromium.content.browser.ContentViewStatics;
@@ -19,11 +20,14 @@ import org.chromium.content.browser.ContentViewStatics;
  */
 public class AwBrowserContext {
 
+    private static final String HTTP_AUTH_DATABASE_FILE = "http_auth.db";
+
     private SharedPreferences mSharedPreferences;
 
     private AwGeolocationPermissions mGeolocationPermissions;
     private AwCookieManager mCookieManager;
     private AwFormDatabase mFormDatabase;
+    private HttpAuthDatabase mHttpAuthDatabase;
 
     public AwBrowserContext(SharedPreferences sharedPreferences) {
         mSharedPreferences = sharedPreferences;
@@ -48,6 +52,13 @@ public class AwBrowserContext {
             mFormDatabase = new AwFormDatabase();
         }
         return mFormDatabase;
+    }
+
+    public HttpAuthDatabase getHttpAuthDatabase(Context context) {
+        if (mHttpAuthDatabase == null) {
+            mHttpAuthDatabase = new HttpAuthDatabase(context, HTTP_AUTH_DATABASE_FILE);
+        }
+        return mHttpAuthDatabase;
     }
 
     /**

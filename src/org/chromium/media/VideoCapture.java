@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,13 +15,13 @@ import android.util.Log;
 import android.view.Surface;
 import android.view.WindowManager;
 
-import java.io.IOException;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.Iterator;
-import java.util.List;
-
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 @JNINamespace("media")
 public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
@@ -31,9 +31,35 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
         public int mDesiredFps = 0;
     }
 
+    // Some devices with OS older than JELLY_BEAN don't support YV12 format correctly.
+    // Some devices don't support YV12 format correctly even with JELLY_BEAN or newer OS.
+    // To work around the issues on those devices, we'd have to request NV21.
+    // This is a temporary hack till device manufacturers fix the problem or
+    // we don't need to support those devices any more.
+    private static class DeviceImageFormatHack {
+        private static final String[] sBUGGY_DEVICE_LIST = {
+            "SAMSUNG-SGH-I747",
+            "ODROID-U2",
+        };
+
+        static int getImageFormat() {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.JELLY_BEAN) {
+                return ImageFormat.NV21;
+            }
+
+            for (String buggyDevice : sBUGGY_DEVICE_LIST) {
+                if (buggyDevice.contentEquals(android.os.Build.MODEL)) {
+                    return ImageFormat.NV21;
+                }
+            }
+            return ImageFormat.YV12;
+        }
+    }
+
     private Camera mCamera;
     public ReentrantLock mPreviewBufferLock = new ReentrantLock();
-    private int mPixelFormat = ImageFormat.YV12;
+    private int mImageFormat = ImageFormat.YV12;
+    private byte[] mColorPlane = null;
     private Context mContext = null;
     // True when native code has started capture.
     private boolean mIsRunning = false;
@@ -42,7 +68,7 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
     private int mExpectedFrameSize = 0;
     private int mId = 0;
     // Native callback context variable.
-    private int mNativeVideoCaptureDeviceAndroid = 0;
+    private long mNativeVideoCaptureDeviceAndroid = 0;
     private int[] mGlTextures = null;
     private SurfaceTexture mSurfaceTexture = null;
     private static final int GL_TEXTURE_EXTERNAL_OES = 0x8D65;
@@ -56,12 +82,12 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
 
     @CalledByNative
     public static VideoCapture createVideoCapture(
-            Context context, int id, int nativeVideoCaptureDeviceAndroid) {
+            Context context, int id, long nativeVideoCaptureDeviceAndroid) {
         return new VideoCapture(context, id, nativeVideoCaptureDeviceAndroid);
     }
 
     public VideoCapture(
-            Context context, int id, int nativeVideoCaptureDeviceAndroid) {
+            Context context, int id, long nativeVideoCaptureDeviceAndroid) {
         mContext = context;
         mId = id;
         mNativeVideoCaptureDeviceAndroid = nativeVideoCaptureDeviceAndroid;
@@ -74,10 +100,16 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
               ", height=" + height + ", frameRate=" + frameRate);
         try {
             mCamera = Camera.open(mId);
-            Camera.CameraInfo camera_info = new Camera.CameraInfo();
-            Camera.getCameraInfo(mId, camera_info);
-            mCameraOrientation = camera_info.orientation;
-            mCameraFacing = camera_info.facing;
+        } catch (RuntimeException ex) {
+            Log.e(TAG, "allocate:Camera.open: " + ex);
+            return false;
+        }
+
+        try {
+            Camera.CameraInfo cameraInfo = new Camera.CameraInfo();
+            Camera.getCameraInfo(mId, cameraInfo);
+            mCameraOrientation = cameraInfo.orientation;
+            mCameraFacing = cameraInfo.facing;
             mDeviceOrientation = getDeviceOrientation();
             Log.d(TAG, "allocate: device orientation=" + mDeviceOrientation +
                   ", camera orientation=" + mCameraOrientation +
@@ -87,26 +119,29 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
 
             // Calculate fps.
             List<int[]> listFpsRange = parameters.getSupportedPreviewFpsRange();
+            if (listFpsRange == null || listFpsRange.size() == 0) {
+                Log.e(TAG, "allocate: no fps range found");
+                return false;
+            }
             int frameRateInMs = frameRate * 1000;
-            boolean fpsIsSupported = false;
-            int fpsMin = 0;
-            int fpsMax = 0;
             Iterator itFpsRange = listFpsRange.iterator();
+            int[] fpsRange = (int[]) itFpsRange.next();
+            // Use the first range as default.
+            int fpsMin = fpsRange[0];
+            int fpsMax = fpsRange[1];
+            int newFrameRate = (fpsMin + 999) / 1000;
             while (itFpsRange.hasNext()) {
-                int[] fpsRange = (int[])itFpsRange.next();
+                fpsRange = (int[]) itFpsRange.next();
                 if (fpsRange[0] <= frameRateInMs &&
                     frameRateInMs <= fpsRange[1]) {
-                    fpsIsSupported = true;
                     fpsMin = fpsRange[0];
                     fpsMax = fpsRange[1];
+                    newFrameRate = frameRate;
                     break;
                 }
             }
-
-            if (!fpsIsSupported) {
-                Log.e(TAG, "allocate: fps " + frameRate + " is not supported");
-                return false;
-            }
+            frameRate = newFrameRate;
+            Log.d(TAG, "allocate: fps set to " + frameRate);
 
             mCurrentCapability = new CaptureCapability();
             mCurrentCapability.mDesiredFps = frameRate;
@@ -119,7 +154,7 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
             int matchedHeight = height;
             Iterator itCameraSize = listCameraSize.iterator();
             while (itCameraSize.hasNext()) {
-                Camera.Size size = (Camera.Size)itCameraSize.next();
+                Camera.Size size = (Camera.Size) itCameraSize.next();
                 int diff = Math.abs(size.width - width) +
                            Math.abs(size.height - height);
                 Log.d(TAG, "allocate: support resolution (" +
@@ -144,8 +179,18 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
             Log.d(TAG, "allocate: matched width=" + matchedWidth +
                   ", height=" + matchedHeight);
 
+            calculateImageFormat(matchedWidth, matchedHeight);
+
+            if (parameters.isVideoStabilizationSupported()) {
+                Log.d(TAG, "Image stabilization supported, currently: "
+                      + parameters.getVideoStabilization() + ", setting it.");
+                parameters.setVideoStabilization(true);
+            } else {
+                Log.d(TAG, "Image stabilization not supported.");
+            }
+
             parameters.setPreviewSize(matchedWidth, matchedHeight);
-            parameters.setPreviewFormat(mPixelFormat);
+            parameters.setPreviewFormat(mImageFormat);
             parameters.setPreviewFpsRange(fpsMin, fpsMax);
             mCamera.setParameters(parameters);
 
@@ -171,7 +216,7 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
             mCamera.setPreviewTexture(mSurfaceTexture);
 
             int bufSize = matchedWidth * matchedHeight *
-                          ImageFormat.getBitsPerPixel(mPixelFormat) / 8;
+                          ImageFormat.getBitsPerPixel(mImageFormat) / 8;
             for (int i = 0; i < NUM_CAPTURE_BUFFERS; i++) {
                 byte[] buffer = new byte[bufSize];
                 mCamera.addCallbackBuffer(buffer);
@@ -198,6 +243,27 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
     @CalledByNative
     public int queryFrameRate() {
         return mCurrentCapability.mDesiredFps;
+    }
+
+    @CalledByNative
+    public int getColorspace() {
+        switch (mImageFormat) {
+            case ImageFormat.YV12:
+                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_YV12;
+            case ImageFormat.NV21:
+                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_NV21;
+            case ImageFormat.YUY2:
+                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_YUY2;
+            case ImageFormat.NV16:
+                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_NV16;
+            case ImageFormat.JPEG:
+                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_JPEG;
+            case ImageFormat.RGB_565:
+                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_RGB_565;
+            case ImageFormat.UNKNOWN:
+            default:
+                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_UNKNOWN;
+        }
     }
 
     @CalledByNative
@@ -278,19 +344,12 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
                           mDeviceOrientation + ", camera orientation=" +
                           mCameraOrientation);
                 }
-                boolean flipVertical = false;
-                boolean flipHorizontal = false;
-                if (mCameraFacing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-                    rotation = (mCameraOrientation + rotation) % 360;
-                    rotation = (360 - rotation) % 360;
-                    flipHorizontal = (rotation == 180 || rotation == 0);
-                    flipVertical = !flipHorizontal;
-                } else {
-                    rotation = (mCameraOrientation - rotation + 360) % 360;
+                if (mCameraFacing == Camera.CameraInfo.CAMERA_FACING_BACK) {
+                    rotation = 360 - rotation;
                 }
+                rotation = (mCameraOrientation + rotation) % 360;
                 nativeOnFrameAvailable(mNativeVideoCaptureDeviceAndroid,
-                        data, mExpectedFrameSize,
-                        rotation, flipVertical, flipHorizontal);
+                        data, mExpectedFrameSize, rotation);
             }
         } finally {
             mPreviewBufferLock.unlock();
@@ -344,17 +403,15 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
     }
 
     private native void nativeOnFrameAvailable(
-            int nativeVideoCaptureDeviceAndroid,
+            long nativeVideoCaptureDeviceAndroid,
             byte[] data,
             int length,
-            int rotation,
-            boolean flipVertical,
-            boolean flipHorizontal);
+            int rotation);
 
     private int getDeviceOrientation() {
         int orientation = 0;
         if (mContext != null) {
-            WindowManager wm = (WindowManager)mContext.getSystemService(
+            WindowManager wm = (WindowManager) mContext.getSystemService(
                     Context.WINDOW_SERVICE);
             switch(wm.getDefaultDisplay().getRotation()) {
                 case Surface.ROTATION_90:
@@ -373,5 +430,9 @@ public class VideoCapture implements PreviewCallback, OnFrameAvailableListener {
             }
         }
         return orientation;
+    }
+
+    private void calculateImageFormat(int width, int height) {
+        mImageFormat = DeviceImageFormatHack.getImageFormat();
     }
 }

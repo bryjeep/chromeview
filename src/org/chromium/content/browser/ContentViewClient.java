@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@ package org.chromium.content.browser;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.RectF;
 import android.util.Log;
 import android.view.ActionMode;
 import android.view.KeyEvent;
@@ -42,13 +43,6 @@ public class ContentViewClient {
     }
 
     /**
-      * Lets client listen on the scaling changes on delayed, throttled
-      * and best-effort basis. Used for WebView.onScaleChanged.
-      */
-    public void onScaleChanged(float oldScale, float newScale) {
-    }
-
-    /**
      * Notifies the client that the position of the top controls has changed.
      * @param topControlsOffsetYPix The Y offset of the top controls in physical pixels.
      * @param contentOffsetYPix The Y offset of the content in physical pixels.
@@ -56,9 +50,6 @@ public class ContentViewClient {
      */
     public void onOffsetsForFullscreenChanged(
             float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
-    }
-
-    public void onTabCrash() {
     }
 
     public boolean shouldOverrideKeyEvent(KeyEvent event) {
@@ -96,8 +87,10 @@ public class ContentViewClient {
         return false;
     }
 
-    // Called when an ImeEvent is sent to the page. Can be used to know when some text is entered
-    // in a page.
+    /**
+     * Called when an ImeEvent is sent to the page. Can be used to know when some text is entered
+     * in a page.
+     */
     public void onImeEvent() {
     }
 
@@ -108,20 +101,6 @@ public class ContentViewClient {
      *                    though).
      */
     public void onImeStateChangeRequested(boolean requestShow) {
-    }
-
-    // TODO (dtrainor): Should expose getScrollX/Y from ContentView or make
-    // computeHorizontalScrollOffset()/computeVerticalScrollOffset() public.
-    /**
-     * Gives the UI the chance to override each scroll event.
-     * @param dx The amount scrolled in the X direction (in physical pixels).
-     * @param dy The amount scrolled in the Y direction (in physical pixels).
-     * @param scrollX The current X scroll offset (in physical pixels).
-     * @param scrollY The current Y scroll offset (in physical pixels).
-     * @return Whether or not the UI consumed and handled this event.
-     */
-    public boolean shouldOverrideScroll(float dx, float dy, float scrollX, float scrollY) {
-        return false;
     }
 
     /**
@@ -142,6 +121,24 @@ public class ContentViewClient {
      * Called when the contextual ActionBar is hidden.
      */
     public void onContextualActionBarHidden() {
+    }
+
+    /**
+     * Perform a search on {@code searchQuery}.  This method is only called if
+     * {@link #doesPerformWebSearch()} returns {@code true}.
+     * @param searchQuery The string to search for.
+     */
+    public void performWebSearch(String searchQuery) {
+    }
+
+    /**
+     * If this returns {@code true} contextual web search attempts will be forwarded to
+     * {@link #performWebSearch(String)}.
+     * @return {@code true} iff this {@link ContentViewClient} wants to consume web search queries
+     *         and override the default intent behavior.
+     */
+    public boolean doesPerformWebSearch() {
+        return false;
     }
 
     /**
@@ -167,6 +164,19 @@ public class ContentViewClient {
     public void onExternalVideoSurfaceRequested(int playerId) {
     }
 
-    public void onGeometryChanged(int playerId, float x, float y, float width, float height) {
+    public void onGeometryChanged(int playerId, RectF rect) {
+    }
+
+    public ContentVideoViewClient getContentVideoViewClient() {
+        return null;
+    }
+
+    /**
+     * Called when BrowserMediaPlayerManager wants to load a media resource.
+     * @param url the URL of media resource to load.
+     * @return true to prevent the resource from being loaded.
+     */
+    public boolean shouldBlockMediaRequest(String url) {
+        return false;
     }
 }

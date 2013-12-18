@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,11 +54,11 @@ class LongPressDetector {
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
-            case LONG_PRESS:
-                dispatchLongPress();
-                break;
-            default:
-                throw new RuntimeException("Unknown message " + msg); //never
+                case LONG_PRESS:
+                    dispatchLongPress();
+                    break;
+                default:
+                    throw new RuntimeException("Unknown message " + msg); // never
             }
         }
     }
@@ -67,25 +67,32 @@ class LongPressDetector {
      * This is an interface to execute the LongPress when it receives the onLongPress message.
      */
     interface LongPressDelegate {
+        /**
+         * @param event The event will be recycled after this call has returned.
+         */
         public void onLongPress(MotionEvent event);
+    }
+
+    private static long calculateLongPressTimeoutTime(MotionEvent ev) {
+        // Using getEventTime instead of getDownTime since for Android WebView,
+        // event stream can be arbitrarily delayed.
+        return ev.getEventTime() + TAP_TIMEOUT + LONGPRESS_TIMEOUT;
     }
 
     /**
      * Initiates a LONG_PRESS gesture timer if needed.
      */
     void startLongPressTimerIfNeeded(MotionEvent ev) {
-        if (!canHandle(ev)) return;
+        if (ev.getAction() != MotionEvent.ACTION_DOWN) return;
 
-        if (mCurrentDownEvent != null) mCurrentDownEvent.recycle();
+        // If there is a current down, we do not expect another down event before
+        // receiving an up event
+        if (mCurrentDownEvent != null) return;
 
         mCurrentDownEvent = MotionEvent.obtain(ev);
-        mLongPressHandler.sendEmptyMessageAtTime(LONG_PRESS, mCurrentDownEvent.getDownTime()
-                + TAP_TIMEOUT + LONGPRESS_TIMEOUT);
+        mLongPressHandler.sendEmptyMessageAtTime(LONG_PRESS,
+                calculateLongPressTimeoutTime(mCurrentDownEvent));
         mInLongPress = false;
-    }
-
-    private boolean canHandle(MotionEvent ev) {
-        return ev.getAction() == MotionEvent.ACTION_DOWN;
     }
 
     // Cancel LONG_PRESS timers.
@@ -103,16 +110,13 @@ class LongPressDetector {
                 final int deltaY = (int) (y - mCurrentDownEvent.getY());
                 int distance = (deltaX * deltaX) + (deltaY * deltaY);
                 if (distance > mTouchSlopSquare) {
-                    mInLongPress = false;
-                    mLongPressHandler.removeMessages(LONG_PRESS);
+                    cancelLongPress();
                 }
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                if (mCurrentDownEvent.getDownTime() + TAP_TIMEOUT + LONGPRESS_TIMEOUT >
-                    ev.getEventTime()) {
-                    mInLongPress = false;
-                    mLongPressHandler.removeMessages(LONG_PRESS);
+                if (calculateLongPressTimeoutTime(mCurrentDownEvent) > ev.getEventTime()) {
+                    cancelLongPress();
                 }
                 break;
             default:
@@ -135,8 +139,11 @@ class LongPressDetector {
     }
 
     void cancelLongPress() {
-        if (mLongPressHandler.hasMessages(LONG_PRESS)) {
+        mInLongPress = false;
+        if (hasPendingMessage()) {
             mLongPressHandler.removeMessages(LONG_PRESS);
+            mCurrentDownEvent.recycle();
+            mCurrentDownEvent = null;
         }
     }
 
@@ -148,10 +155,12 @@ class LongPressDetector {
     private void dispatchLongPress() {
         mInLongPress = true;
         mLongPressDelegate.onLongPress(mCurrentDownEvent);
+        mCurrentDownEvent.recycle();
+        mCurrentDownEvent = null;
     }
 
     boolean hasPendingMessage() {
-        return mLongPressHandler.hasMessages(LONG_PRESS);
+        return mCurrentDownEvent != null;
     }
 
     void onOfferTouchEventToJavaScript(MotionEvent event) {

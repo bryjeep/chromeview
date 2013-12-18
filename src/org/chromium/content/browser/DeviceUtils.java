@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,8 @@ package org.chromium.content.browser;
 import android.content.Context;
 import android.content.pm.PackageManager;
 
-import org.chromium.content.common.CommandLine;
+import org.chromium.base.CommandLine;
+import org.chromium.content.common.ContentSwitches;
 
 /**
  * A utility class that has helper methods for device configuration.
@@ -19,16 +20,24 @@ public class DeviceUtils {
      */
     private static final int MINIMUM_TABLET_WIDTH_DP = 600;
 
+    private static Boolean sIsTv = null;
+    private static Boolean sIsTablet = null;
+
     /**
      * @param context Android's context
      * @return        Whether the app is should treat the device as a tablet for layout.
      */
     public static boolean isTablet(Context context) {
-        if (isTv(context)) {
-            return true;
+        if (sIsTablet == null) {
+            if (isTv(context)) {
+                sIsTablet = true;
+                return sIsTablet;
+            }
+            int minimumScreenWidthDp = context.getResources().getConfiguration().
+                    smallestScreenWidthDp;
+            sIsTablet = minimumScreenWidthDp >= MINIMUM_TABLET_WIDTH_DP;
         }
-        int minimumScreenWidthDp = context.getResources().getConfiguration().smallestScreenWidthDp;
-        return minimumScreenWidthDp >= MINIMUM_TABLET_WIDTH_DP;
+        return sIsTablet;
     }
 
     /**
@@ -40,11 +49,15 @@ public class DeviceUtils {
      * @return {@code true} if the device should be treated as TV.
      */
     public static boolean isTv(Context context) {
-        PackageManager manager = context.getPackageManager();
-        if (manager != null) {
-            return manager.hasSystemFeature(PackageManager.FEATURE_TELEVISION);
+        if (sIsTv == null) {
+            PackageManager manager = context.getPackageManager();
+            if (manager != null) {
+                sIsTv = manager.hasSystemFeature(PackageManager.FEATURE_TELEVISION);
+                return sIsTv;
+            }
+            sIsTv = false;
         }
-        return false;
+        return sIsTv;
     }
 
     /**
@@ -53,9 +66,9 @@ public class DeviceUtils {
      */
     public static void addDeviceSpecificUserAgentSwitch(Context context) {
         if (isTablet(context)) {
-            CommandLine.getInstance().appendSwitch(CommandLine.TABLET_UI);
+            CommandLine.getInstance().appendSwitch(ContentSwitches.TABLET_UI);
         } else {
-            CommandLine.getInstance().appendSwitch(CommandLine.USE_MOBILE_UA);
+            CommandLine.getInstance().appendSwitch(ContentSwitches.USE_MOBILE_UA);
         }
     }
 }

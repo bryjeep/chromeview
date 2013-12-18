@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -167,6 +167,13 @@ public class LoadUrlParams {
     }
 
     /**
+     * Return the base url for a data url, otherwise null.
+     */
+    public String getBaseUrl() {
+        return mBaseUrlForDataUrl;
+    }
+
+    /**
      * Set load type of this load. Defaults to LOAD_TYPE_DEFAULT.
      * @param loadType One of LOAD_TYPE static constants above.
      */
@@ -212,17 +219,32 @@ public class LoadUrlParams {
      * NavigationController::LoadUrlParams::extra_headers.
      */
     String getExtraHeadersString() {
+        return getExtraHeadersString("\n", false);
+    }
+
+    /**
+     * Return the extra headers as a single String separated by "\r\n", or null if no extra header
+     * is set. This form is suitable for passing to native
+     * net::HttpRequestHeaders::AddHeadersFromString.
+     */
+    public String getExtraHttpRequestHeadersString() {
+        return getExtraHeadersString("\r\n", true);
+    }
+
+    private String getExtraHeadersString(String delimiter, boolean addTerminator) {
         if (mExtraHeaders == null) return null;
 
         StringBuilder headerBuilder = new StringBuilder();
         for (Map.Entry<String, String> header : mExtraHeaders.entrySet()) {
-            if (headerBuilder.length() > 0) headerBuilder.append("\n");
+            if (headerBuilder.length() > 0) headerBuilder.append(delimiter);
 
             // Header name should be lower case.
             headerBuilder.append(header.getKey().toLowerCase());
             headerBuilder.append(":");
             headerBuilder.append(header.getValue());
         }
+        if (addTerminator)
+            headerBuilder.append(delimiter);
 
         return headerBuilder.toString();
     }

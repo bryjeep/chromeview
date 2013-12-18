@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,13 +28,9 @@ import android.util.Log;
  */
 public class HttpAuthDatabase {
 
-    private static final String DATABASE_FILE = "http_auth.db";
-
-    private static final String LOGTAG = HttpAuthDatabase.class.getName();
+    private static final String LOGTAG = "HttpAuthDatabase";
 
     private static final int DATABASE_VERSION = 1;
-
-    private static HttpAuthDatabase sInstance = null;
 
     private SQLiteDatabase mDatabase = null;
 
@@ -70,17 +66,6 @@ public class HttpAuthDatabase {
                 initOnBackgroundThread(context, databaseFile);
             }
         }.start();
-    }
-
-    /**
-     * @deprecated Retained for merge convenience. TODO(joth): remove in next patch.
-     */
-    @Deprecated
-    public static synchronized HttpAuthDatabase getInstance(Context context) {
-        if (sInstance == null) {
-            sInstance = new HttpAuthDatabase(context, DATABASE_FILE);
-        }
-        return sInstance;
     }
 
     /**
@@ -199,7 +184,7 @@ public class HttpAuthDatabase {
      *         String[1] is password.  Null is returned if it can't find anything.
      */
     public String[] getHttpAuthUsernamePassword(String host, String realm) {
-        if (host == null || realm == null || !waitForInit()){
+        if (host == null || realm == null || !waitForInit()) {
             return null;
         }
 

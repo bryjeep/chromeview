@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,17 @@ package org.chromium.content.browser.input;
 
 import android.view.View;
 
+import com.google.common.annotations.VisibleForTesting;
+
+import org.chromium.content.browser.PositionObserver;
+
 /**
  * CursorController for selecting a range of text.
  */
 public abstract class SelectionHandleController implements CursorController {
 
     // The following constants match the ones in
-    // third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h
+    // third_party/WebKit/public/web/WebTextDirection.h
     private static final int TEXT_DIRECTION_DEFAULT = 0;
     private static final int TEXT_DIRECTION_LTR = 1;
     private static final int TEXT_DIRECTION_RTL = 2;
@@ -31,8 +35,11 @@ public abstract class SelectionHandleController implements CursorController {
     private int mFixedHandleX;
     private int mFixedHandleY;
 
-    public SelectionHandleController(View parent) {
+    private PositionObserver mPositionObserver;
+
+    public SelectionHandleController(View parent, PositionObserver positionObserver) {
         mParent = parent;
+        mPositionObserver = positionObserver;
     }
 
     /** Automatically show selection anchors when text is selected. */
@@ -175,14 +182,26 @@ public abstract class SelectionHandleController implements CursorController {
         showHandlesIfNeeded();
     }
 
+    @VisibleForTesting
+    public HandleView getStartHandleViewForTest() {
+        return mStartHandle;
+    }
+
+    @VisibleForTesting
+    public HandleView getEndHandleViewForTest() {
+        return mEndHandle;
+    }
+
     private void createHandlesIfNeeded(int startDir, int endDir) {
         if (mStartHandle == null) {
             mStartHandle = new HandleView(this,
-                startDir == TEXT_DIRECTION_RTL ? HandleView.RIGHT : HandleView.LEFT, mParent);
+                    startDir == TEXT_DIRECTION_RTL ? HandleView.RIGHT : HandleView.LEFT, mParent,
+                    mPositionObserver);
         }
         if (mEndHandle == null) {
             mEndHandle = new HandleView(this,
-                endDir == TEXT_DIRECTION_RTL ? HandleView.LEFT : HandleView.RIGHT, mParent);
+                    endDir == TEXT_DIRECTION_RTL ? HandleView.LEFT : HandleView.RIGHT, mParent,
+                    mPositionObserver);
         }
     }
 

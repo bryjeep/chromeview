@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,24 +6,21 @@ package org.chromium.net;
 
 import android.util.Log;
 
-import java.lang.reflect.InvocationTargetException;
+import org.chromium.base.CalledByNative;
+import org.chromium.base.JNINamespace;
+
 import java.lang.reflect.Method;
-import java.math.BigInteger;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.Signature;
 import java.security.interfaces.DSAKey;
-import java.security.interfaces.DSAPrivateKey;
 import java.security.interfaces.DSAParams;
+import java.security.interfaces.DSAPrivateKey;
 import java.security.interfaces.ECKey;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.RSAKey;
 import java.security.interfaces.RSAPrivateKey;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.Signature;
 import java.security.spec.ECParameterSpec;
-
-import org.chromium.base.CalledByNative;
-import org.chromium.base.JNINamespace;
-import org.chromium.net.PrivateKeyType;;
 
 @JNINamespace("net::android")
 public class AndroidKeyStore {
@@ -112,20 +109,21 @@ public class AndroidKeyStore {
      * shall only be used to implement signing in the context of SSL
      * client certificate support.
      *
-     * The message will actually be a hash, computed and padded by OpenSSL,
-     * itself, depending on the type of the key. The result should match
-     * exactly what the vanilla implementations of the following OpenSSL
-     * function calls do:
+     * The message will actually be a hash, computed by OpenSSL itself,
+     * depending on the type of the key. The result should match exactly
+     * what the vanilla implementations of the following OpenSSL function
+     * calls do:
      *
      *  - For a RSA private key, this should be equivalent to calling
-     *    RSA_sign(NDI_md5_sha1,....), i.e. it must generate a raw RSA
-     *    signature. The message must a combined, 36-byte MD5+SHA1 message
-     *    digest padded to the length of the modulus using PKCS#1 padding.
+     *    RSA_private_encrypt(..., RSA_PKCS1_PADDING), i.e. it must
+     *    generate a raw RSA signature. The message must be either a
+     *    combined, 36-byte MD5+SHA1 message digest or a DigestInfo
+     *    value wrapping a message digest.
      *
      *  - For a DSA and ECDSA private keys, this should be equivalent to
      *    calling DSA_sign(0,...) and ECDSA_sign(0,...) respectively. The
-     *    message must be a 20-byte SHA1 hash and the function shall
-     *    compute a direct DSA/ECDSA signature for it.
+     *    message must be a hash and the function shall compute a direct
+     *    DSA/ECDSA signature for it.
      *
      * @param privateKey The PrivateKey handle.
      * @param message The message to sign.
